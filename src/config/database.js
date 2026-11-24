@@ -1,5 +1,7 @@
 const env = require('./env');
 
+const useSsl = process.env.DB_SSL === 'true';
+
 const baseConfig = {
   username: env.db.username,
   password: env.db.password,
@@ -10,6 +12,7 @@ const baseConfig = {
   dialectOptions: {
     charset: 'utf8mb4',
     decimalNumbers: true,
+    ...(useSsl ? { ssl: { rejectUnauthorized: false } } : {}),
   },
   pool: {
     max: env.db.poolMax,

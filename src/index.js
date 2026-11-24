@@ -43,6 +43,14 @@ const createApp = () => {
   });
   app.use('/api', globalLimiter);
 
+  app.get('/', (req, res) => {
+    res.json({
+      success: true,
+      message: 'Taantira API server is running',
+      health: '/api/health',
+    });
+  });
+
   app.use('/api', apiRoutes);
 
   app.use(notFoundHandler);

@@ -1,13 +1,14 @@
-const http = require('http');
-const { Server } = require('socket.io');
 const env = require('./src/config/env');
 const { createApp } = require('./src/index');
-const { sequelize } = require('./src/models');
-const { initializeSockets } = require('./src/sockets');
 
 const app = createApp();
 
 const startServer = async () => {
+  const http = require('http');
+  const { Server } = require('socket.io');
+  const { sequelize } = require('./src/models');
+  const { initializeSockets } = require('./src/sockets');
+
   const httpServer = http.createServer(app);
   const io = new Server(httpServer, {
     cors: {
