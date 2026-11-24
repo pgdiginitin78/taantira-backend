@@ -5,9 +5,11 @@ const toInt = (value, fallback) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const isVercelOrProd = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1';
+
 const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
-  isProduction: process.env.NODE_ENV === 'production',
+  isProduction: isVercelOrProd,
   port: toInt(process.env.PORT, 5000),
   db: {
     host: process.env.DB_HOST || '127.0.0.1',
@@ -26,10 +28,15 @@ const env = {
     refreshExpiresDays: toInt(process.env.JWT_REFRESH_EXPIRES_DAYS, 30),
   },
   cookies: {
-    secure: process.env.COOKIE_SECURE === 'true',
-    sameSite: process.env.COOKIE_SAME_SITE || 'lax',
+    secure: process.env.COOKIE_SECURE !== undefined ? process.env.COOKIE_SECURE === 'true' : isVercelOrProd,
+    sameSite: process.env.COOKIE_SAME_SITE || (isVercelOrProd ? 'none' : 'lax'),
   },
-  corsOrigins: (process.env.CORS_ORIGIN || 'http://localhost:5173,http://localhost:5174')
+  corsOrigins: (
+    process.env.CORS_ORIGIN ||
+    (isVercelOrProd
+      ? 'https://taantira-frontend.vercel.app'
+      : 'http://localhost:5173,http://localhost:5174')
+  )
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean),

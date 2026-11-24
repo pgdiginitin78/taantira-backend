@@ -1,9 +1,10 @@
 # Dependencies
 node_modules/
 
-# Environment variables
+# Environment variables (keep local URLs & secrets out of Git)
 .env
 .env.*
+*.local
 !.env.example
 
 # Logs & runtime
