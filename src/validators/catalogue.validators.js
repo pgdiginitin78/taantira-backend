@@ -24,30 +24,38 @@ const collectionSchema = yup.object({
   sort_order: yup.number().integer().default(0),
 });
 
+const galleryImageItemSchema = yup.object({
+  angle_key: yup.string().oneOf(['front', 'back', 'side', 'border', 'weave']).optional(),
+  sort_order: yup.number().integer().min(1).max(5).required(),
+  image_url: yup.string().trim().max(500).required(),
+  alt_text: yup.string().trim().max(255).nullable(),
+});
+
 const productSchema = yup.object({
   name: yup.string().trim().min(3).max(200).required('Product name is required'),
   slug: yup.string().trim().lowercase().matches(/^[a-z0-9-]+$/).required('Slug is required'),
   sku: yup.string().trim().min(3).max(80).required('SKU is required'),
   primary_category_id: yup.number().integer().positive().required('Primary category is required'),
   short_description: yup.string().max(500).nullable(),
-  description: yup.string().min(10).required('Description is required'),
+  description: yup.string().min(5, 'Enter at least 5 characters').required('Description is required'),
   story: yup.string().nullable(),
   base_price: yup.number().positive('Base price must be greater than zero').required('Base price is required'),
   sale_price: yup.number().positive().nullable(),
-  tax_rate: yup.number().min(0).max(28).default(12),
+  tax_rate: yup.number().min(0).max(28).default(5),
   fabric: yup.string().trim().required('Fabric information is required'),
-  occasion: yup.string().trim().required('Occasion is required'),
+  occasion: yup.string().trim().default('Handloom & Festive'),
   length_width: yup.string().max(180).nullable(),
   wash_care: yup.string().max(255).nullable(),
   manufacturing_info: yup.string().max(255).nullable(),
   country_of_origin: yup.string().default('India'),
-  return_policy: yup.string().default('7-day easy return & size exchange'),
+  return_policy: yup.string().default('7-day easy return on uncustomized sarees.'),
   is_featured: yup.boolean().default(false),
   is_new_arrival: yup.boolean().default(false),
   is_best_seller: yup.boolean().default(false),
   is_trending: yup.boolean().default(false),
   is_active: yup.boolean().default(true),
   image_url: yup.string().max(500).nullable(),
+  gallery_images: yup.array().of(galleryImageItemSchema).max(5).optional(),
   variants: yup.array().of(
     yup.object({
       sku: yup.string().required('Variant SKU is required'),
@@ -59,6 +67,28 @@ const productSchema = yup.object({
       low_stock_threshold: yup.number().integer().min(0).default(5),
     })
   ).optional(),
+});
+
+const productUpdateSchema = yup.object({
+  name: yup.string().trim().min(3).max(200).optional(),
+  slug: yup.string().trim().lowercase().matches(/^[a-z0-9-]+$/).optional(),
+  sku: yup.string().trim().min(3).max(80).optional(),
+  primary_category_id: yup.number().integer().positive().optional(),
+  short_description: yup.string().max(500).nullable(),
+  description: yup.string().min(5).optional(),
+  base_price: yup.number().positive().optional(),
+  sale_price: yup.number().positive().nullable(),
+  fabric: yup.string().trim().optional(),
+  occasion: yup.string().trim().optional(),
+  length_width: yup.string().max(180).nullable(),
+  wash_care: yup.string().max(255).nullable(),
+  is_featured: yup.boolean().optional(),
+  is_new_arrival: yup.boolean().optional(),
+  is_trending: yup.boolean().optional(),
+  is_active: yup.boolean().optional(),
+  stock_qty: yup.number().integer().min(0).optional(),
+  image_url: yup.string().max(500).nullable(),
+  gallery_images: yup.array().of(galleryImageItemSchema).max(5).optional(),
 });
 
 const variantSchema = yup.object({
@@ -99,6 +129,7 @@ module.exports = {
   categorySchema,
   collectionSchema,
   productSchema,
+  productUpdateSchema,
   variantSchema,
   stockAdjustSchema,
   reviewSchema,

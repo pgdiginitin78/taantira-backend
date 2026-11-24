@@ -307,3 +307,17 @@ test('Catalogue filter service supports multi-select Category, Subcategory, Fabr
   const nauvariJewels = getMatchingJewellery('nauvari-sarees');
   assert.ok(nauvariJewels.some((j) => j.name.includes('Nath')));
 });
+
+test('Super Admin exclusive RBAC blocks non-super_admin staff from Category/Subcategory/Product routes', () => {
+  const onlySuperAdmin = requireRoles('super_admin');
+  const results = [];
+  const next = (err) => results.push(err || 'OK');
+
+  onlySuperAdmin({ user: { roles: ['catalogue_manager'], permissions: ['catalogue.manage'] } }, {}, next);
+  onlySuperAdmin({ user: { roles: ['customer'], permissions: [] } }, {}, next);
+  onlySuperAdmin({ user: { roles: ['super_admin'], permissions: [] } }, {}, next);
+
+  assert.equal(results[0].statusCode, 403);
+  assert.equal(results[1].statusCode, 403);
+  assert.equal(results[2], 'OK');
+});

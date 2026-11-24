@@ -3,7 +3,7 @@ const adminController = require('../controllers/admin.controller');
 const inventoryController = require('../controllers/inventory.controller');
 const userController = require('../controllers/user.controller');
 const { authenticate } = require('../middleware/auth');
-const { requireAdminAccess, requirePermissions } = require('../middleware/rbac');
+const { requireRoles, requireAdminAccess, requirePermissions } = require('../middleware/rbac');
 const { upload } = require('../middleware/upload');
 const { validate } = require('../middleware/validate');
 const { stockAdjustSchema } = require('../validators/catalogue.validators');
@@ -29,7 +29,7 @@ inventoryRouter.post('/adjust', validate(stockAdjustSchema), inventoryController
 
 const mediaRouter = express.Router();
 mediaRouter.get('/:id', inventoryController.serveMediaBinary);
-mediaRouter.post('/upload', authenticate, requireAdminAccess, upload.single('file'), inventoryController.uploadMediaBinary);
+mediaRouter.post('/upload', authenticate, requireRoles('super_admin'), upload.single('file'), inventoryController.uploadMediaBinary);
 
 const reportsRouter = express.Router();
 reportsRouter.use(authenticate, requirePermissions('reports.view'));

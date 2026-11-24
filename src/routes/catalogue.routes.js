@@ -1,10 +1,11 @@
 const express = require('express');
 const catalogueController = require('../controllers/catalogue.controller');
 const { authenticate } = require('../middleware/auth');
-const { requirePermissions } = require('../middleware/rbac');
+const { requireRoles, requirePermissions } = require('../middleware/rbac');
 const { validate } = require('../middleware/validate');
 const {
   productSchema,
+  productUpdateSchema,
   variantSchema,
   categorySchema,
   collectionSchema,
@@ -26,18 +27,20 @@ productsRouter.put(
   validate(answerSchema),
   catalogueController.answerProductQuestion
 );
-productsRouter.post('/', authenticate, requirePermissions('catalogue.manage'), validate(productSchema), catalogueController.createProduct);
-productsRouter.put('/:id', authenticate, requirePermissions('catalogue.manage'), catalogueController.updateProduct);
-productsRouter.post('/:id/variants', authenticate, requirePermissions('catalogue.manage'), validate(variantSchema), catalogueController.addVariant);
+productsRouter.post('/', authenticate, requireRoles('super_admin'), validate(productSchema), catalogueController.createProduct);
+productsRouter.put('/:id', authenticate, requireRoles('super_admin'), validate(productUpdateSchema), catalogueController.updateProduct);
+productsRouter.delete('/:id', authenticate, requireRoles('super_admin'), catalogueController.deleteProduct);
+productsRouter.post('/:id/variants', authenticate, requireRoles('super_admin'), validate(variantSchema), catalogueController.addVariant);
 
 const categoriesRouter = express.Router();
 categoriesRouter.get('/', catalogueController.listCategories);
-categoriesRouter.post('/', authenticate, requirePermissions('catalogue.manage'), validate(categorySchema), catalogueController.createCategory);
-categoriesRouter.put('/:id', authenticate, requirePermissions('catalogue.manage'), validate(categorySchema), catalogueController.updateCategory);
+categoriesRouter.post('/', authenticate, requireRoles('super_admin'), validate(categorySchema), catalogueController.createCategory);
+categoriesRouter.put('/:id', authenticate, requireRoles('super_admin'), validate(categorySchema), catalogueController.updateCategory);
+categoriesRouter.delete('/:id', authenticate, requireRoles('super_admin'), catalogueController.deleteCategory);
 
 const collectionsRouter = express.Router();
 collectionsRouter.get('/', catalogueController.listCollections);
-collectionsRouter.post('/', authenticate, requirePermissions('catalogue.manage'), validate(collectionSchema), catalogueController.createCollection);
+collectionsRouter.post('/', authenticate, requireRoles('super_admin'), validate(collectionSchema), catalogueController.createCollection);
 
 const reviewsRouter = express.Router();
 reviewsRouter.post('/', authenticate, validate(reviewSchema), catalogueController.createReview);

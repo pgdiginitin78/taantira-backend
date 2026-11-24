@@ -242,10 +242,17 @@ const listProducts = async (req, res, next) => {
       filtered = [...filtered].sort((a, b) => Number(b.rating_avg || 0) - Number(a.rating_avg || 0));
     } else if (sort === 'name_asc') {
       filtered = [...filtered].sort((a, b) => a.name.localeCompare(b.name));
+    } else {
+      filtered = [...filtered].sort((a, b) => {
+        const aHasImg = (a.images || []).length > 0 ? 1 : 0;
+        const bHasImg = (b.images || []).length > 0 ? 1 : 0;
+        if (aHasImg !== bHasImg) return bHasImg - aHasImg;
+        return Number(a.id || 0) - Number(b.id || 0);
+      });
     }
 
     const pageNum = Math.max(1, Number.parseInt(page, 10) || 1);
-    const pageSize = Math.min(48, Math.max(1, Number.parseInt(limit, 10) || 24));
+    const pageSize = Math.min(250, Math.max(1, Number.parseInt(limit, 10) || 24));
     const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
     const safePage = Math.min(pageNum, totalPages);
     const offset = (safePage - 1) * pageSize;
@@ -348,8 +355,35 @@ const getProductBySlug = async (req, res, next) => {
 
 const listCategories = async (req, res, next) => {
   try {
-    const categories = await Category.findAll({ order: [['sort_order', 'ASC'], ['name', 'ASC']] });
-    return sendSuccess(res, categories);
+    const where = req.query.includeInactive === 'true' ? {} : { is_active: true };
+    const [categories, productCounts] = await Promise.all([
+      Category.findAll({
+        where,
+        include: [
+          { model: Category, as: 'parent', attributes: ['id', 'name', 'slug'] },
+          { model: Category, as: 'children', attributes: ['id', 'name', 'slug', 'sort_order', 'is_active'], required: false },
+        ],
+        order: [['sort_order', 'ASC'], ['name', 'ASC']],
+      }),
+      Product.findAll({
+        attributes: ['primary_category_id', [sequelize.fn('COUNT', sequelize.col('id')), 'cnt']],
+        group: ['primary_category_id'],
+        raw: true,
+      }),
+    ]);
+
+    const directCountMap = new Map(productCounts.map((r) => [Number(r.primary_category_id), Number(r.cnt)]));
+    const enriched = categories.map((c) => {
+      const plain = c.toJSON();
+      const childSum = (plain.children || []).reduce((acc, ch) => acc + (directCountMap.get(Number(ch.id)) || 0), 0);
+      return {
+        ...plain,
+        direct_product_count: directCountMap.get(Number(plain.id)) || 0,
+        product_count: (directCountMap.get(Number(plain.id)) || 0) + childSum,
+      };
+    });
+
+    return sendSuccess(res, enriched);
   } catch (err) {
     return next(err);
   }
@@ -435,17 +469,68 @@ const answerProductQuestion = async (req, res, next) => {
   }
 };
 
-// Admin Catalogue CRUD
+const ANGLE_LABELS = {
+  1: 'Main Front View',
+  2: 'Back View',
+  3: 'Side / Three-Quarter View',
+  4: 'Zari / Border Close-Up',
+  5: 'Fabric & Weave Close-Up',
+};
+
+const buildDistinctGalleryRows = (productId, productName, galleryImages, singleImageUrl) => {
+  const seenUrls = new Set();
+  const rows = [];
+
+  if (Array.isArray(galleryImages) && galleryImages.length > 0) {
+    const sorted = [...galleryImages]
+      .filter((img) => img && String(img.image_url || '').trim())
+      .sort((a, b) => Number(a.sort_order || 1) - Number(b.sort_order || 1));
+
+    for (const img of sorted) {
+      const url = String(img.image_url).trim();
+      if (seenUrls.has(url)) {
+        throw new AppError('Each saree angle must use a distinct photo (duplicate URL rejected).', 400, 'DUPLICATE_IMAGE_URL');
+      }
+      seenUrls.add(url);
+      const slot = Number(img.sort_order || rows.length + 1);
+      rows.push({
+        product_id: productId,
+        image_url: url,
+        alt_text: img.alt_text || `${productName} — ${ANGLE_LABELS[slot] || `Angle ${slot}`}`,
+        is_primary: rows.length === 0,
+        sort_order: slot,
+      });
+    }
+    return rows;
+  }
+
+  if (singleImageUrl && String(singleImageUrl).trim()) {
+    rows.push({
+      product_id: productId,
+      image_url: String(singleImageUrl).trim(),
+      alt_text: `${productName} — Main Front View`,
+      is_primary: true,
+      sort_order: 1,
+    });
+  }
+
+  return rows;
+};
+
+// Super Admin Catalogue CRUD
 const createProduct = async (req, res, next) => {
   try {
-    const { variants = [], image_url, ...productFields } = req.body;
+    const { variants = [], image_url, gallery_images, ...productFields } = req.body;
+    const category = await Category.findByPk(productFields.primary_category_id);
+    if (!category) {
+      return next(new AppError('Selected category/subcategory not found', 404, 'CATEGORY_NOT_FOUND'));
+    }
+
     const created = await sequelize.transaction(async (transaction) => {
       const product = await Product.create(productFields, { transaction });
-      if (image_url) {
-        await ProductImage.create(
-          { product_id: product.id, image_url, alt_text: product.name, is_primary: true, sort_order: 1 },
-          { transaction }
-        );
+      const imageRows = buildDistinctGalleryRows(product.id, product.name, gallery_images, image_url);
+      if (imageRows.length > 0) {
+        await ProductImage.bulkCreate(imageRows, { transaction });
       }
 
       const defaultWarehouse = await Warehouse.findOne({ where: { is_default: true }, transaction });
@@ -471,12 +556,12 @@ const createProduct = async (req, res, next) => {
         action: 'PRODUCT_CREATED',
         entityType: 'product',
         entityId: product.id,
-        newValues: productFields,
+        newValues: { ...productFields, image_count: imageRows.length },
         ipAddress: req.ip,
         transaction,
       });
 
-      return { product, variants: createdVariants };
+      return { product, variants: createdVariants, images: imageRows };
     });
 
     return sendSuccess(res, created, 'Product created successfully', 201);
@@ -487,32 +572,64 @@ const createProduct = async (req, res, next) => {
 
 const updateProduct = async (req, res, next) => {
   try {
-    const product = await Product.findByPk(req.params.id);
+    const product = await Product.findByPk(req.params.id, { include: [{ model: ProductVariant, as: 'variants' }] });
     if (!product) return next(new AppError('Product not found', 404, 'NOT_FOUND'));
 
     const oldValues = product.toJSON();
-    const { image_url, ...updates } = req.body;
-    await product.update(updates);
-    if (image_url) {
-      const primaryImg = await ProductImage.findOne({ where: { product_id: product.id, is_primary: true } });
-      if (primaryImg) {
-        await primaryImg.update({ image_url });
-      } else {
-        await ProductImage.create({ product_id: product.id, image_url, is_primary: true, alt_text: product.name });
-      }
+    const { image_url, gallery_images, stock_qty, ...updates } = req.body;
+
+    if (updates.primary_category_id) {
+      const category = await Category.findByPk(updates.primary_category_id);
+      if (!category) return next(new AppError('Selected category not found', 404, 'CATEGORY_NOT_FOUND'));
     }
 
-    await recordAuditLog({
-      actorId: req.user.id,
-      action: 'PRODUCT_UPDATED',
-      entityType: 'product',
-      entityId: product.id,
-      oldValues,
-      newValues: updates,
-      ipAddress: req.ip,
+    await sequelize.transaction(async (transaction) => {
+      await product.update(updates, { transaction });
+
+      if (Array.isArray(gallery_images) || image_url !== undefined) {
+        const imageRows = buildDistinctGalleryRows(product.id, updates.name || product.name, gallery_images, image_url);
+        await ProductImage.destroy({ where: { product_id: product.id }, transaction });
+        if (imageRows.length > 0) {
+          await ProductImage.bulkCreate(imageRows, { transaction });
+        }
+      }
+
+      if (stock_qty !== undefined && product.variants?.[0]) {
+        await product.variants[0].update({ stock_qty: Number(stock_qty) }, { transaction });
+      }
+
+      await recordAuditLog({
+        actorId: req.user.id,
+        action: 'PRODUCT_UPDATED',
+        entityType: 'product',
+        entityId: product.id,
+        oldValues,
+        newValues: updates,
+        ipAddress: req.ip,
+        transaction,
+      });
     });
 
-    return sendSuccess(res, product, 'Product updated');
+    const refreshed = await Product.findByPk(product.id, { include: productIncludeList });
+    return sendSuccess(res, serializeProductWithAngles(refreshed), 'Product updated');
+  } catch (err) {
+    return next(err);
+  }
+};
+
+const deleteProduct = async (req, res, next) => {
+  try {
+    const product = await Product.findByPk(req.params.id);
+    if (!product) return next(new AppError('Product not found', 404, 'NOT_FOUND'));
+
+    const usedInOrders = await OrderItem.count({ where: { product_id: product.id } });
+    if (usedInOrders > 0) {
+      await product.update({ is_active: false });
+      return sendSuccess(res, { id: product.id, archived: true }, 'Product archived (referenced by historical orders)');
+    }
+
+    await product.destroy();
+    return sendSuccess(res, { id: product.id, deleted: true }, 'Product removed permanently');
   } catch (err) {
     return next(err);
   }
@@ -520,8 +637,20 @@ const updateProduct = async (req, res, next) => {
 
 const createCategory = async (req, res, next) => {
   try {
+    if (req.body.parent_id) {
+      const parent = await Category.findByPk(req.body.parent_id);
+      if (!parent) return next(new AppError('Parent main category not found', 404, 'PARENT_NOT_FOUND'));
+    }
     const category = await Category.create(req.body);
-    return sendSuccess(res, category, 'Category created', 201);
+    await recordAuditLog({
+      actorId: req.user.id,
+      action: req.body.parent_id ? 'SUBCATEGORY_CREATED' : 'CATEGORY_CREATED',
+      entityType: 'category',
+      entityId: category.id,
+      newValues: req.body,
+      ipAddress: req.ip,
+    });
+    return sendSuccess(res, category, req.body.parent_id ? 'Subcategory created' : 'Main category created', 201);
   } catch (err) {
     return next(err);
   }
@@ -531,8 +660,45 @@ const updateCategory = async (req, res, next) => {
   try {
     const category = await Category.findByPk(req.params.id);
     if (!category) return next(new AppError('Category not found', 404, 'NOT_FOUND'));
+    if (req.body.parent_id && Number(req.body.parent_id) === Number(category.id)) {
+      return next(new AppError('Category cannot be its own parent', 400, 'INVALID_PARENT'));
+    }
+    const oldValues = category.toJSON();
     await category.update(req.body);
+    await recordAuditLog({
+      actorId: req.user.id,
+      action: category.parent_id ? 'SUBCATEGORY_UPDATED' : 'CATEGORY_UPDATED',
+      entityType: 'category',
+      entityId: category.id,
+      oldValues,
+      newValues: req.body,
+      ipAddress: req.ip,
+    });
     return sendSuccess(res, category, 'Category updated');
+  } catch (err) {
+    return next(err);
+  }
+};
+
+const deleteCategory = async (req, res, next) => {
+  try {
+    const category = await Category.findByPk(req.params.id);
+    if (!category) return next(new AppError('Category not found', 404, 'NOT_FOUND'));
+
+    const [childCount, productCount] = await Promise.all([
+      Category.count({ where: { parent_id: category.id } }),
+      Product.count({ where: { primary_category_id: category.id } }),
+    ]);
+
+    if (childCount > 0) {
+      return next(new AppError(`Cannot delete: ${childCount} subcategories still belong to this main category.`, 409, 'CATEGORY_HAS_CHILDREN'));
+    }
+    if (productCount > 0) {
+      return next(new AppError(`Cannot delete: ${productCount} sarees/products are assigned to this category.`, 409, 'CATEGORY_HAS_PRODUCTS'));
+    }
+
+    await category.destroy();
+    return sendSuccess(res, { id: category.id, deleted: true }, 'Category removed');
   } catch (err) {
     return next(err);
   }
@@ -570,8 +736,10 @@ module.exports = {
   answerProductQuestion,
   createProduct,
   updateProduct,
+  deleteProduct,
   createCategory,
   updateCategory,
+  deleteCategory,
   createCollection,
   addVariant,
 };
