@@ -24,7 +24,6 @@ const { AppError } = require('../utils/errors');
 const {
   normalizeCsvParam,
   buildGalleryAngles,
-  getMatchingJewellery,
   filterCatalogueRecords,
   computeCatalogueFacets,
 } = require('../services/catalogueFilter.service');
@@ -42,13 +41,11 @@ const productIncludeList = [
 
 const serializeProductWithAngles = (productInstance) => {
   const plain = typeof productInstance?.toJSON === 'function' ? productInstance.toJSON() : { ...productInstance };
-  const mainSlug = plain.primaryCategory?.parent?.slug || plain.primaryCategory?.slug || '';
   return {
     ...plain,
     category: plain.primaryCategory?.parent?.name || plain.primaryCategory?.name || '',
     subcategory: plain.primaryCategory?.parent ? plain.primaryCategory.name : '',
     gallery_angles: buildGalleryAngles(plain),
-    matching_jewellery: mainSlug && mainSlug !== 'jewellery' ? getMatchingJewellery(mainSlug) : [],
   };
 };
 
@@ -316,22 +313,67 @@ const getProductBySlug = async (req, res, next) => {
     const matchingIds = Array.isArray(product.matching_product_ids_json)
       ? product.matching_product_ids_json
       : [];
+    const mainCategorySlug =
+      product.primaryCategory?.parent?.slug || product.primaryCategory?.slug || '';
+    const isJewelleryProduct = mainCategorySlug === 'jewellery';
+
+    const fetchMatchingJewellery = async () => {
+      if (isJewelleryProduct) {
+        return matchingIds.length > 0
+          ? Product.findAll({
+              where: { id: { [Op.in]: matchingIds }, is_active: true },
+              include: productIncludeList,
+            })
+          : [];
+      }
+
+      const explicitMatches =
+        matchingIds.length > 0
+          ? await Product.findAll({
+              where: { id: { [Op.in]: matchingIds }, is_active: true },
+              include: productIncludeList,
+            })
+          : [];
+
+      if (explicitMatches.length >= 3) {
+        return explicitMatches.slice(0, 3);
+      }
+
+      const existingIds = new Set(explicitMatches.map((m) => Number(m.id)));
+      const allJewellery = await Product.findAll({
+        where: { is_active: true },
+        include: [
+          {
+            model: Category,
+            as: 'primaryCategory',
+            where: { slug: 'jewellery' },
+            include: [{ model: Category, as: 'parent', attributes: ['id', 'name', 'slug', 'sort_order'] }],
+          },
+          { model: ProductImage, as: 'images' },
+          { model: ProductVariant, as: 'variants' },
+          { model: Collection, as: 'collections', attributes: ['id', 'name', 'slug'], through: { attributes: [] } },
+        ],
+        order: [['id', 'ASC']],
+      });
+
+      const remaining = allJewellery.filter((j) => !existingIds.has(Number(j.id)));
+      if (mainCategorySlug === 'nauvari-sarees' || mainCategorySlug === 'paithani-tussar-sarees') {
+        remaining.sort((a, b) => {
+          const score = (x) => (x.slug.includes('nath') || x.slug.includes('kolhapuri') ? 0 : 1);
+          return score(a) - score(b);
+        });
+      } else if (mainCategorySlug === 'kanjivaram-sarees') {
+        remaining.sort((a, b) => {
+          const score = (x) => (x.slug.includes('temple') || x.slug.includes('jhumka') ? 0 : 1);
+          return score(a) - score(b);
+        });
+      }
+
+      return [...explicitMatches, ...remaining].slice(0, 3);
+    };
 
     const [matchingProducts, similarProducts] = await Promise.all([
-      matchingIds.length > 0
-        ? Product.findAll({
-            where: { id: { [Op.in]: matchingIds }, is_active: true },
-            include: productIncludeList,
-          })
-        : Product.findAll({
-            where: { is_active: true },
-            include: [
-              { model: Category, as: 'primaryCategory', where: { slug: 'jewellery' } },
-              { model: ProductImage, as: 'images' },
-              { model: ProductVariant, as: 'variants' },
-            ],
-            limit: 2,
-          }),
+      fetchMatchingJewellery(),
       Product.findAll({
         where: {
           is_active: true,

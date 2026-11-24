@@ -33,7 +33,11 @@ const register = async (req, res, next) => {
     setRefreshCookie(res, result.refreshToken);
     return sendSuccess(
       res,
-      { accessToken: result.accessToken, user: result.user },
+      {
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        user: result.user,
+      },
       'Account registered successfully',
       201
     );
@@ -52,7 +56,11 @@ const login = async (req, res, next) => {
     setRefreshCookie(res, result.refreshToken);
     return sendSuccess(
       res,
-      { accessToken: result.accessToken, user: result.user },
+      {
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        user: result.user,
+      },
       'Logged in successfully'
     );
   } catch (err) {
@@ -71,7 +79,11 @@ const refresh = async (req, res, next) => {
     setRefreshCookie(res, result.refreshToken);
     return sendSuccess(
       res,
-      { accessToken: result.accessToken, user: result.user },
+      {
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        user: result.user,
+      },
       'Token refreshed'
     );
   } catch (err) {
