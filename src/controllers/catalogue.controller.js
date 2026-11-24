@@ -21,24 +21,64 @@ const { getPublicSettingsMap } = require('../services/pricing.service');
 const { sendSuccess } = require('../utils/response');
 const { AppError } = require('../utils/errors');
 
+const {
+  normalizeCsvParam,
+  buildGalleryAngles,
+  getMatchingJewellery,
+  filterCatalogueRecords,
+  computeCatalogueFacets,
+} = require('../services/catalogueFilter.service');
+
 const productIncludeList = [
-  { model: Category, as: 'primaryCategory' },
+  {
+    model: Category,
+    as: 'primaryCategory',
+    include: [{ model: Category, as: 'parent', attributes: ['id', 'name', 'slug', 'sort_order'] }],
+  },
   { model: ProductImage, as: 'images' },
   { model: ProductVariant, as: 'variants' },
   { model: Collection, as: 'collections', attributes: ['id', 'name', 'slug'], through: { attributes: [] } },
 ];
 
+const serializeProductWithAngles = (productInstance) => {
+  const plain = typeof productInstance?.toJSON === 'function' ? productInstance.toJSON() : { ...productInstance };
+  const mainSlug = plain.primaryCategory?.parent?.slug || plain.primaryCategory?.slug || '';
+  return {
+    ...plain,
+    category: plain.primaryCategory?.parent?.name || plain.primaryCategory?.name || '',
+    subcategory: plain.primaryCategory?.parent ? plain.primaryCategory.name : '',
+    gallery_angles: buildGalleryAngles(plain),
+    matching_jewellery: mainSlug && mainSlug !== 'jewellery' ? getMatchingJewellery(mainSlug) : [],
+  };
+};
+
 const getHomepage = async (req, res, next) => {
   try {
-    const [banners, promos, categories, collections, products, reviews, settings] = await Promise.all([
+    const [banners, promos, categories, collections, products, orderItems, reviews, settings] = await Promise.all([
       Banner.findAll({ where: { is_active: true }, order: [['sort_order', 'ASC']] }),
       PromotionalCampaign.findAll({ where: { is_active: true }, order: [['created_at', 'DESC']], limit: 3 }),
-      Category.findAll({ where: { is_active: true }, order: [['sort_order', 'ASC']] }),
+      Category.findAll({
+        where: { is_active: true },
+        include: [{ model: Category, as: 'children', where: { is_active: true }, required: false }],
+        order: [['sort_order', 'ASC'], ['name', 'ASC']],
+      }),
       Collection.findAll({ where: { is_active: true }, order: [['sort_order', 'ASC']] }),
       Product.findAll({
         where: { is_active: true },
         include: productIncludeList,
         order: [['created_at', 'DESC']],
+      }),
+      OrderItem.findAll({
+        attributes: ['product_id', 'quantity'],
+        include: [
+          {
+            model: Order,
+            as: 'order',
+            where: { status: { [Op.ne]: 'cancelled' } },
+            attributes: [],
+            required: true,
+          },
+        ],
       }),
       ProductReview.findAll({
         where: { is_approved: true },
@@ -52,26 +92,58 @@ const getHomepage = async (req, res, next) => {
       getPublicSettingsMap(),
     ]);
 
-    const byCategory = (slug) =>
-      products.filter((p) => p.primaryCategory?.slug === slug).slice(0, 4);
+    const salesCountByProduct = new Map();
+    for (const item of orderItems) {
+      const pid = Number(item.product_id);
+      salesCountByProduct.set(pid, (salesCountByProduct.get(pid) || 0) + Number(item.quantity || 1));
+    }
 
-    const sareeProducts = products.filter((p) => p.primaryCategory?.slug !== 'jewellery');
-    const jewelleryProducts = products.filter((p) => p.primaryCategory?.slug === 'jewellery');
+    const enrichedProducts = products.map((p) => {
+      const plain = serializeProductWithAngles(p);
+      return {
+        ...plain,
+        sales_count: salesCountByProduct.get(Number(plain.id)) || 0,
+      };
+    });
+
+    const sareeProducts = enrichedProducts.filter((p) => p.primaryCategory?.slug !== 'jewellery');
+    const jewelleryProducts = enrichedProducts.filter((p) => p.primaryCategory?.slug === 'jewellery');
+    const nauvariSarees = sareeProducts.filter(
+      (p) => p.primaryCategory?.parent?.slug === 'nauvari-sarees' || p.primaryCategory?.slug === 'nauvari-sarees'
+    );
+    const realBestSellers = sareeProducts
+      .filter((p) => Number(p.sales_count || 0) > 0)
+      .sort((a, b) => Number(b.sales_count || 0) - Number(a.sales_count || 0));
+
+    const parentCategories = categories.filter((c) => !c.parent_id);
+
+    const byMain = (mainSlug) =>
+      sareeProducts
+        .filter((p) => p.primaryCategory?.parent?.slug === mainSlug || p.primaryCategory?.slug === mainSlug)
+        .slice(0, 6);
 
     return sendSuccess(res, {
       banners,
       promotional_bar: promos[0] || null,
-      categories,
+      categories: parentCategories,
+      main_categories: parentCategories.filter((c) => c.slug !== 'jewellery'),
       collections,
-      new_arrivals: products.filter((p) => p.is_new_arrival).slice(0, 6),
-      best_sellers: products.filter((p) => p.is_best_seller).slice(0, 6),
-      trending_products: products.filter((p) => p.is_trending).slice(0, 6),
+      handwoven_sarees: sareeProducts.filter((p) => (p.images || []).length > 0).slice(0, 8),
+      nauvari_sarees: nauvariSarees.slice(0, 6),
+      new_arrivals: sareeProducts.filter((p) => p.is_new_arrival).slice(0, 8),
+      best_sellers: realBestSellers.slice(0, 8),
+      best_sellers_available: realBestSellers.length > 0,
+      trending_products: sareeProducts.filter((p) => p.is_trending).slice(0, 8),
+      jewellery_products: jewelleryProducts.slice(0, 4),
       category_showcases: {
         sarees: sareeProducts.slice(0, 8),
-        banarasi: byCategory('banarasi-sarees'),
-        kanjivaram: byCategory('kanjivaram-sarees'),
-        paithani_tussar: byCategory('paithani-tussar-sarees'),
-        organza_jamdani: [...byCategory('organza-georgette-sarees'), ...byCategory('jamdani-handloom-sarees')].slice(0, 4),
+        banarasi: byMain('banarasi-sarees'),
+        kanjivaram: byMain('kanjivaram-sarees'),
+        paithani_tussar: byMain('paithani-tussar-sarees'),
+        organza_georgette: byMain('organza-georgette-sarees'),
+        jamdani_chanderi: byMain('jamdani-chanderi-sarees'),
+        nauvari: nauvariSarees.slice(0, 6),
+        regional: byMain('regional-handloom-sarees'),
         jewellery: jewelleryProducts.slice(0, 4),
       },
       customer_reviews: reviews,
@@ -87,29 +159,21 @@ const searchSuggestions = async (req, res, next) => {
     const q = String(req.query.q || '').trim();
     if (!q) return sendSuccess(res, { products: [], categories: [], collections: [] });
 
-    const like = `%${q}%`;
-    const [products, categories, collections] = await Promise.all([
+    const [allProducts, categories, collections] = await Promise.all([
       Product.findAll({
-        where: {
-          is_active: true,
-          [Op.or]: [
-            { name: { [Op.like]: like } },
-            { fabric: { [Op.like]: like } },
-            { occasion: { [Op.like]: like } },
-            { sku: { [Op.like]: like } },
-          ],
-        },
-        include: [
-          { model: ProductImage, as: 'images', where: { is_primary: true }, required: false },
-          { model: Category, as: 'primaryCategory', attributes: ['name', 'slug'] },
-        ],
-        limit: 6,
+        where: { is_active: true },
+        include: productIncludeList,
       }),
-      Category.findAll({ where: { is_active: true, name: { [Op.like]: like } }, limit: 4 }),
-      Collection.findAll({ where: { is_active: true, name: { [Op.like]: like } }, limit: 4 }),
+      Category.findAll({ where: { is_active: true, name: { [Op.like]: `%${q}%` } }, limit: 6 }),
+      Collection.findAll({ where: { is_active: true, name: { [Op.like]: `%${q}%` } }, limit: 4 }),
     ]);
 
-    return sendSuccess(res, { products, categories, collections });
+    const matchedProducts = filterCatalogueRecords(
+      allProducts.map((p) => p.toJSON()),
+      { q }
+    ).slice(0, 8);
+
+    return sendSuccess(res, { products: matchedProducts, categories, collections });
   } catch (err) {
     return next(err);
   }
@@ -120,149 +184,92 @@ const listProducts = async (req, res, next) => {
     const {
       collection,
       category,
+      categories,
+      subcategory,
+      subcategories,
+      fabric,
+      fabrics,
       q,
       minPrice,
       maxPrice,
-      size,
-      color,
-      fabric,
-      occasion,
       inStock,
       sort = 'newest',
       page = 1,
-      limit = 12,
+      limit = 24,
     } = req.query;
 
-    const where = {};
+    const productWhere = {};
     if (req.query.includeInactive !== 'true') {
-      where.is_active = true;
+      productWhere.is_active = true;
     }
 
-    if (q) {
-      const like = `%${String(q).trim()}%`;
-      where[Op.or] = [
-        { name: { [Op.like]: like } },
-        { fabric: { [Op.like]: like } },
-        { occasion: { [Op.like]: like } },
-        { sku: { [Op.like]: like } },
-      ];
-    }
-    if (fabric) where.fabric = { [Op.like]: `%${fabric}%` };
-    if (occasion) where.occasion = { [Op.like]: `%${occasion}%` };
+    const [allCategories, allProducts, bannerCat, bannerCol] = await Promise.all([
+      Category.findAll({
+        where: { is_active: true },
+        include: [{ model: Category, as: 'parent', attributes: ['id', 'name', 'slug'] }],
+        order: [['sort_order', 'ASC'], ['name', 'ASC']],
+      }),
+      Product.findAll({
+        where: productWhere,
+        include: productIncludeList,
+        order: [['id', 'ASC']],
+      }),
+      category ? Category.findOne({ where: { slug: category } }) : collection ? Category.findOne({ where: { slug: collection } }) : Promise.resolve(null),
+      collection ? Collection.findOne({ where: { slug: collection } }) : Promise.resolve(null),
+    ]);
 
-    if (minPrice || maxPrice) {
-      const priceRange = {};
-      if (minPrice) priceRange[Op.gte] = Number(minPrice);
-      if (maxPrice) priceRange[Op.lte] = Number(maxPrice);
-      where[Op.and] = [
-        ...(where[Op.and] || []),
-        sequelize.where(sequelize.fn('COALESCE', sequelize.col('Product.sale_price'), sequelize.col('Product.base_price')), priceRange),
-      ];
-    }
+    const plainProducts = allProducts.map(serializeProductWithAngles);
+    const selectedCategories = normalizeCsvParam(categories || category);
+    const selectedSubcategories = normalizeCsvParam(subcategories || subcategory);
+    const selectedFabrics = normalizeCsvParam(fabrics || fabric);
 
-    let orderClause = [['created_at', 'DESC']];
-    if (sort === 'price_asc') {
-      orderClause = [[sequelize.literal('COALESCE(Product.sale_price, Product.base_price)'), 'ASC']];
-    } else if (sort === 'price_desc') {
-      orderClause = [[sequelize.literal('COALESCE(Product.sale_price, Product.base_price)'), 'DESC']];
-    } else if (sort === 'rating') {
-      orderClause = [['rating_avg', 'DESC']];
-    } else if (sort === 'bestselling') {
-      orderClause = [['is_best_seller', 'DESC'], ['rating_avg', 'DESC']];
-    }
-
-    const knownCollections = new Set(['all', 'sarees', 'new-arrivals', 'best-sellers', 'festive-collections', 'jewellery-pairing']);
-    const categorySlug = category || (collection && !knownCollections.has(collection) ? collection : null);
-    let bannerEntity = null;
-
-    if (collection && ['new-arrivals', 'best-sellers', 'festive-collections', 'jewellery-pairing'].includes(collection)) {
-      bannerEntity = await Collection.findOne({ where: { slug: collection } });
-    } else if (categorySlug) {
-      bannerEntity = await Category.findOne({ where: { slug: categorySlug } });
-    }
-
-    const categoryWhere = categorySlug
-      ? { slug: categorySlug }
-      : collection === 'sarees'
-      ? { slug: { [Op.ne]: 'jewellery' } }
-      : undefined;
-
-    const variantWhere = { is_active: true };
-    if (size) variantWhere.size = size;
-    if (color) variantWhere.color_name = { [Op.like]: `%${color}%` };
-    if (inStock === 'true') variantWhere.stock_qty = { [Op.gt]: 0 };
-
-    const allMatched = await Product.findAll({
-      where,
-      include: [
-        {
-          model: Category,
-          as: 'primaryCategory',
-          ...(categoryWhere ? { where: categoryWhere } : {}),
-        },
-        { model: ProductImage, as: 'images' },
-        {
-          model: ProductVariant,
-          as: 'variants',
-          where: Object.keys(variantWhere).length > 1 ? variantWhere : undefined,
-          required: Object.keys(variantWhere).length > 1,
-        },
-        {
-          model: Collection,
-          as: 'collections',
-          through: { attributes: [] },
-          ...(collection && bannerEntity?.constructor?.name === 'Collection'
-            ? { where: { slug: collection }, required: true }
-            : {}),
-        },
-      ],
-      order: orderClause,
+    let filtered = filterCatalogueRecords(plainProducts, {
+      collection,
+      categories: selectedCategories,
+      subcategories: selectedSubcategories,
+      fabrics: selectedFabrics,
+      q,
+      minPrice,
+      maxPrice,
+      inStock,
     });
+
+    if (sort === 'price_asc') {
+      filtered = [...filtered].sort((a, b) => Number(a.sale_price ?? a.base_price) - Number(b.sale_price ?? b.base_price));
+    } else if (sort === 'price_desc') {
+      filtered = [...filtered].sort((a, b) => Number(b.sale_price ?? b.base_price) - Number(a.sale_price ?? a.base_price));
+    } else if (sort === 'rating') {
+      filtered = [...filtered].sort((a, b) => Number(b.rating_avg || 0) - Number(a.rating_avg || 0));
+    } else if (sort === 'name_asc') {
+      filtered = [...filtered].sort((a, b) => a.name.localeCompare(b.name));
+    }
 
     const pageNum = Math.max(1, Number.parseInt(page, 10) || 1);
-    const pageSize = Math.min(48, Math.max(1, Number.parseInt(limit, 10) || 12));
-    const offset = (pageNum - 1) * pageSize;
-    const paginated = allMatched.slice(offset, offset + pageSize);
+    const pageSize = Math.min(48, Math.max(1, Number.parseInt(limit, 10) || 24));
+    const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+    const safePage = Math.min(pageNum, totalPages);
+    const offset = (safePage - 1) * pageSize;
+    const paginated = filtered.slice(offset, offset + pageSize);
 
-    // Derive filter facets from catalog
-    const allFacets = await Product.findAll({
-      where: { is_active: true },
-      attributes: ['fabric', 'occasion'],
-      include: [{ model: ProductVariant, as: 'variants', attributes: ['size', 'color_name', 'color_hex'] }],
-    });
-
-    const sizes = new Set();
-    const colors = new Map();
-    const fabrics = new Set();
-    const occasions = new Set();
-    for (const item of allFacets) {
-      if (item.fabric) fabrics.add(item.fabric);
-      if (item.occasion) occasions.add(item.occasion);
-      for (const v of item.variants || []) {
-        if (v.size) sizes.add(v.size);
-        if (v.color_name) colors.set(v.color_name, v.color_hex);
-      }
-    }
+    const facets = computeCatalogueFacets(
+      plainProducts,
+      allCategories.map((c) => c.toJSON())
+    );
 
     return sendSuccess(
       res,
       {
-        banner: bannerEntity,
+        banner: bannerCol || bannerCat || null,
         products: paginated,
-        facets: {
-          sizes: Array.from(sizes),
-          colors: Array.from(colors.entries()).map(([name, hex]) => ({ name, hex })),
-          fabrics: Array.from(fabrics),
-          occasions: Array.from(occasions),
-        },
+        facets,
       },
       'Products loaded',
       200,
       {
-        total: allMatched.length,
-        page: pageNum,
+        total: filtered.length,
+        page: safePage,
         limit: pageSize,
-        totalPages: Math.max(1, Math.ceil(allMatched.length / pageSize)),
+        totalPages,
       }
     );
   } catch (err) {
@@ -272,7 +279,7 @@ const listProducts = async (req, res, next) => {
 
 const getProductBySlug = async (req, res, next) => {
   try {
-    const product = await Product.findOne({
+    const productInstance = await Product.findOne({
       where: { slug: req.params.slug, is_active: true },
       include: [
         ...productIncludeList,
@@ -293,9 +300,11 @@ const getProductBySlug = async (req, res, next) => {
       ],
     });
 
-    if (!product) {
+    if (!productInstance) {
       return next(new AppError('Product not found', 404, 'PRODUCT_NOT_FOUND'));
     }
+
+    const product = serializeProductWithAngles(productInstance);
 
     const matchingIds = Array.isArray(product.matching_product_ids_json)
       ? product.matching_product_ids_json
@@ -307,7 +316,15 @@ const getProductBySlug = async (req, res, next) => {
             where: { id: { [Op.in]: matchingIds }, is_active: true },
             include: productIncludeList,
           })
-        : Promise.resolve([]),
+        : Product.findAll({
+            where: { is_active: true },
+            include: [
+              { model: Category, as: 'primaryCategory', where: { slug: 'jewellery' } },
+              { model: ProductImage, as: 'images' },
+              { model: ProductVariant, as: 'variants' },
+            ],
+            limit: 2,
+          }),
       Product.findAll({
         where: {
           is_active: true,
@@ -321,8 +338,8 @@ const getProductBySlug = async (req, res, next) => {
 
     return sendSuccess(res, {
       product,
-      matching_products: matchingProducts,
-      similar_products: similarProducts,
+      matching_products: matchingProducts.map(serializeProductWithAngles),
+      similar_products: similarProducts.map(serializeProductWithAngles),
     });
   } catch (err) {
     return next(err);

@@ -194,3 +194,116 @@ test('Upload magic-byte verifier validates real image signatures and rejects spo
   assert.equal(hasValidMagicBytes(pngHeader, 'image/png'), true);
   assert.equal(hasValidMagicBytes(fakePng, 'image/png'), false);
 });
+
+test('Saree catalogue enforces 7 main categories, 42 subcategories, 210 unique sarees, and zero duplicated images', () => {
+  const { MAIN_CATEGORIES, JEWELLERY_CATEGORY } = require('../src/data/sareeCatalogueData');
+
+  assert.equal(MAIN_CATEGORIES.length, 7);
+  const subCategories = MAIN_CATEGORIES.flatMap((m) => m.subcategories);
+  assert.equal(subCategories.length, 42);
+
+  const allProducts = [];
+  const nameSet = new Set();
+  const slugSet = new Set();
+  const skuSet = new Set();
+  const imageOwnerMap = new Map();
+
+  for (const main of MAIN_CATEGORIES) {
+    for (const sub of main.subcategories) {
+      assert.equal(sub.products.length, 5, `${sub.slug} must contain exactly 5 sarees`);
+      for (const prod of sub.products) {
+        assert.ok(!nameSet.has(prod.name), `Duplicate saree name: ${prod.name}`);
+        assert.ok(!slugSet.has(prod.slug), `Duplicate saree slug: ${prod.slug}`);
+        assert.ok(!skuSet.has(prod.sku), `Duplicate saree SKU: ${prod.sku}`);
+        nameSet.add(prod.name);
+        slugSet.add(prod.slug);
+        skuSet.add(prod.sku);
+        if (prod.image_url) {
+          assert.ok(!imageOwnerMap.has(prod.image_url), `Image ${prod.image_url} reused on multiple products`);
+          imageOwnerMap.set(prod.image_url, prod.slug);
+        }
+        allProducts.push({ ...prod, mainSlug: main.slug, subSlug: sub.slug });
+      }
+    }
+  }
+
+  assert.equal(allProducts.length, 210);
+  const nauvariCount = allProducts.filter((p) => p.mainSlug === 'nauvari-sarees').length;
+  assert.equal(nauvariCount, 30);
+  assert.ok(!imageOwnerMap.has(JEWELLERY_CATEGORY.product.image_url));
+});
+
+test('Catalogue filter service supports multi-select Category, Subcategory, Fabric, Search, and empty states', () => {
+  const { MAIN_CATEGORIES, JEWELLERY_CATEGORY } = require('../src/data/sareeCatalogueData');
+  const {
+    filterCatalogueRecords,
+    buildGalleryAngles,
+    getMatchingJewellery,
+  } = require('../src/services/catalogueFilter.service');
+
+  const built = [];
+  for (const main of MAIN_CATEGORIES) {
+    for (const sub of main.subcategories) {
+      for (const prod of sub.products) {
+        built.push({
+          ...prod,
+          fabric: sub.fabric,
+          primaryCategory: { slug: sub.slug, name: sub.name, parent: { slug: main.slug, name: main.name } },
+          images: prod.image_url ? [{ image_url: prod.image_url, sort_order: 1, is_primary: true }] : [],
+          variants: [{ id: 1, stock_qty: 12 }],
+        });
+      }
+    }
+  }
+  built.push({
+    ...JEWELLERY_CATEGORY.product,
+    primaryCategory: { slug: 'jewellery', name: JEWELLERY_CATEGORY.name, parent: null },
+    images: [{ image_url: JEWELLERY_CATEGORY.product.image_url, sort_order: 1, is_primary: true }],
+    variants: [{ id: 999, stock_qty: 20 }],
+  });
+
+  // Multi-select Category filter
+  const banarasiAndKanjivaram = filterCatalogueRecords(built, {
+    categories: ['banarasi-sarees', 'kanjivaram-sarees'],
+  });
+  assert.equal(banarasiAndKanjivaram.length, 50);
+
+  // Multi-select Subcategory filter
+  const mixedSub = filterCatalogueRecords(built, {
+    subcategories: ['pure-banarasi-silk', 'peshwai-nauvari'],
+  });
+  assert.equal(mixedSub.length, 10);
+
+  // Multi-select Fabric filter (4 Organza subcategories + 1 Linen subcategory = 25)
+  const organzaAndLinen = filterCatalogueRecords(built, { fabrics: ['Organza', 'Linen'] });
+  assert.equal(organzaAndLinen.length, 25);
+
+  // Combined Category + Fabric + Search filter
+  const combinedNauvariCotton = filterCatalogueRecords(built, {
+    categories: ['nauvari-sarees'],
+    fabrics: ['Cotton'],
+  });
+  assert.equal(combinedNauvariCotton.length, 15);
+
+  const searchMatches = filterCatalogueRecords(built, { q: 'Paithani' });
+  assert.ok(searchMatches.length >= 20);
+
+  // Empty state intersection
+  const impossible = filterCatalogueRecords(built, {
+    categories: ['banarasi-sarees'],
+    fabrics: ['Linen'],
+  });
+  assert.equal(impossible.length, 0);
+
+  // 5-angle gallery contract & honest missing-angle state
+  const aaradhya = built.find((p) => p.slug === 'aaradhya-burgundy-banarasi-silk-saree');
+  const angles = buildGalleryAngles(aaradhya);
+  assert.equal(angles.length, 5);
+  assert.equal(angles[0].status, 'available');
+  assert.equal(angles[1].status, 'image-needed');
+  assert.equal(angles[4].status, 'image-needed');
+
+  // Matching jewellery rules
+  const nauvariJewels = getMatchingJewellery('nauvari-sarees');
+  assert.ok(nauvariJewels.some((j) => j.name.includes('Nath')));
+});

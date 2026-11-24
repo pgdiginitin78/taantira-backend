@@ -145,322 +145,158 @@ module.exports = {
       { user_id: userMap['meera@taantira.com'], name: 'My Taantira Wishlist', created_at: now, updated_at: now },
     ]);
 
-    // 5. Categories (90% Sarees across weaves + 10% Saree Jewellery)
-    const categoriesData = [
-      { name: 'Banarasi Sarees', slug: 'banarasi-sarees', description: 'Handwoven katan & tissue Banarasi silk sarees from Varanasi.', image_url: '/assets/products/saree-burgundy.jpg', sort_order: 1, is_active: true, supports_blouse_option: true, supports_petticoat_option: true, supports_customisation: true, supports_gift_options: true, created_at: now, updated_at: now },
-      { name: 'Kanjivaram Sarees', slug: 'kanjivaram-sarees', description: 'Heirloom pure mulberry Kanjivaram silk weaves with temple borders.', image_url: '/assets/products/saree-kanjivaram-berry.jpg', sort_order: 2, is_active: true, supports_blouse_option: true, supports_petticoat_option: true, supports_customisation: true, supports_gift_options: true, created_at: now, updated_at: now },
-      { name: 'Paithani & Tussar', slug: 'paithani-tussar-sarees', description: 'Regal Paithani and hand-spun Tussar silk sarees.', image_url: '/assets/products/saree-paithani-maroon.jpg', sort_order: 3, is_active: true, supports_blouse_option: true, supports_petticoat_option: true, supports_customisation: true, supports_gift_options: true, created_at: now, updated_at: now },
-      { name: 'Organza & Georgette', slug: 'organza-georgette-sarees', description: 'Featherlight silk organza and draped georgette sarees.', image_url: '/assets/products/saree-ivory.jpg', sort_order: 4, is_active: true, supports_blouse_option: true, supports_petticoat_option: true, supports_customisation: true, supports_gift_options: true, created_at: now, updated_at: now },
-      { name: 'Jamdani & Handloom', slug: 'jamdani-handloom-sarees', description: 'Artisanal Jamdani muslin and Chanderi handloom sarees.', image_url: '/assets/products/saree-jamdani-blush.jpg', sort_order: 5, is_active: true, supports_blouse_option: true, supports_petticoat_option: true, supports_customisation: true, supports_gift_options: true, created_at: now, updated_at: now },
-      { name: 'Saree Jewellery', slug: 'jewellery', description: 'Curated heritage chandbalis, pearl drops, and antique brass jewellery crafted to pair with sarees.', image_url: '/assets/products/jewellery-chandbali.jpg', sort_order: 6, is_active: true, supports_blouse_option: false, supports_petticoat_option: false, supports_customisation: false, supports_gift_options: true, created_at: now, updated_at: now },
+    // 5. Categories (7 Main Saree Categories -> 42 Subcategories + 1 Heritage Saree Jewellery Category)
+    const { MAIN_CATEGORIES, JEWELLERY_CATEGORY } = require('../src/data/sareeCatalogueData');
+
+    const parentCategoriesData = [
+      ...MAIN_CATEGORIES.map((main) => ({
+        name: main.name,
+        slug: main.slug,
+        parent_id: null,
+        description: main.description,
+        image_url: main.image_url,
+        sort_order: main.sort_order,
+        is_active: true,
+        supports_blouse_option: true,
+        supports_petticoat_option: true,
+        supports_customisation: true,
+        supports_gift_options: true,
+        created_at: now,
+        updated_at: now,
+      })),
+      {
+        name: JEWELLERY_CATEGORY.name,
+        slug: JEWELLERY_CATEGORY.slug,
+        parent_id: null,
+        description: JEWELLERY_CATEGORY.description,
+        image_url: JEWELLERY_CATEGORY.image_url,
+        sort_order: JEWELLERY_CATEGORY.sort_order,
+        is_active: true,
+        supports_blouse_option: false,
+        supports_petticoat_option: false,
+        supports_customisation: false,
+        supports_gift_options: true,
+        created_at: now,
+        updated_at: now,
+      },
     ];
-    await queryInterface.bulkInsert('categories', categoriesData);
+    await queryInterface.bulkInsert('categories', parentCategoriesData);
+    const [parentRows] = await queryInterface.sequelize.query('SELECT id, slug FROM categories WHERE parent_id IS NULL');
+    const mainCatMap = Object.fromEntries(parentRows.map((c) => [c.slug, c.id]));
+
+    const subcategoryRows = [];
+    for (const main of MAIN_CATEGORIES) {
+      main.subcategories.forEach((sub, idx) => {
+        subcategoryRows.push({
+          name: sub.name,
+          slug: sub.slug,
+          parent_id: mainCatMap[main.slug],
+          description: `${sub.name} (${sub.fabric}) under ${main.name}`,
+          image_url: null,
+          sort_order: idx + 1,
+          is_active: true,
+          supports_blouse_option: true,
+          supports_petticoat_option: true,
+          supports_customisation: true,
+          supports_gift_options: true,
+          created_at: now,
+          updated_at: now,
+        });
+      });
+    }
+    await queryInterface.bulkInsert('categories', subcategoryRows);
     const [categories] = await queryInterface.sequelize.query('SELECT id, slug FROM categories');
     const catMap = Object.fromEntries(categories.map((c) => [c.slug, c.id]));
 
     // 6. Collections
     const collectionsData = [
-      { name: 'Festive Saree Edit', slug: 'festive-collections', subtitle: 'Heirloom silk weaves for celebratory evenings', description: 'Curated Banarasi, Kanjivaram, and Paithani silk sarees crafted across India.', banner_image_url: '/assets/banners/hero-festive.jpg', is_active: true, sort_order: 1, created_at: now, updated_at: now },
-      { name: 'New Arrivals', slug: 'new-arrivals', subtitle: 'Latest handloom sarees from the atelier', description: 'Fresh weaves in deep burgundy, warm ivory, berry rose, and blush pink.', banner_image_url: '/assets/banners/hero-festive.jpg', is_active: true, sort_order: 2, created_at: now, updated_at: now },
-      { name: 'Best Sellers', slug: 'best-sellers', subtitle: 'Most-loved Taantira sarees', description: 'Signature sarees adored by patrons across India.', banner_image_url: '/assets/banners/hero-festive.jpg', is_active: true, sort_order: 3, created_at: now, updated_at: now },
-      { name: 'Saree Jewellery Pairing', slug: 'jewellery-pairing', subtitle: 'Curated heritage jewellery (10% atelier capsule)', description: 'Antique gold & pearl accents tailored for silk saree drapes.', banner_image_url: '/assets/banners/hero-festive.jpg', is_active: true, sort_order: 4, created_at: now, updated_at: now },
+      { name: 'Festive Saree Edit', slug: 'festive-collections', subtitle: 'Heirloom silk weaves for celebratory evenings', description: 'Curated Banarasi, Kanjivaram, Paithani, Nauvari, and Jamdani sarees crafted across India.', banner_image_url: '/assets/banners/hero-festive.jpg', is_active: true, sort_order: 1, created_at: now, updated_at: now },
+      { name: 'New Arrivals', slug: 'new-arrivals', subtitle: 'Latest handloom sarees from the atelier', description: 'Fresh weaves across our 7 saree houses.', banner_image_url: '/assets/banners/hero-festive.jpg', is_active: true, sort_order: 2, created_at: now, updated_at: now },
+      { name: 'Best Sellers', slug: 'best-sellers', subtitle: 'Most-loved Taantira sarees', description: 'Signature sarees ordered by patrons across India.', banner_image_url: '/assets/banners/hero-festive.jpg', is_active: true, sort_order: 3, created_at: now, updated_at: now },
+      { name: 'Nauvari / 9 Vaari Sarees', slug: 'nauvari-sarees', subtitle: 'Authentic nine-yard Maharashtrian drapes', description: 'Traditional Paithani, Brahmani, Peshwai, Koli, Kashta & Ready-to-Wear Nauvari sarees.', banner_image_url: '/assets/banners/hero-festive.jpg', is_active: true, sort_order: 4, created_at: now, updated_at: now },
+      { name: 'Saree Jewellery Pairing', slug: 'jewellery-pairing', subtitle: 'Curated heritage saree jewellery', description: 'Antique gold & pearl accents tailored for silk saree drapes.', banner_image_url: '/assets/banners/hero-festive.jpg', is_active: true, sort_order: 5, created_at: now, updated_at: now },
     ];
     await queryInterface.bulkInsert('collections', collectionsData);
     const [collections] = await queryInterface.sequelize.query('SELECT id, slug FROM collections');
     const colMap = Object.fromEntries(collections.map((c) => [c.slug, c.id]));
 
-    // 7. Products: 9 Sarees (90%) + 1 Jewellery Set (10%)
-    const productsData = [
-      {
-        name: 'Aaradhya Deep Burgundy Banarasi Silk Saree',
-        slug: 'aaradhya-burgundy-banarasi-silk-saree',
-        sku: 'TAN-SAR-001',
-        primary_category_id: catMap['banarasi-sarees'],
-        short_description: 'Handwoven katan Banarasi silk saree with champagne gold geometric zari border.',
-        description: 'Woven on traditional pit looms in Varanasi, the Aaradhya Deep Burgundy Banarasi Silk Saree pairs a luminous katan silk drape with champagne gold zari borders and an unstitched matching silk blouse piece.',
-        story: 'Created over 180 artisan loom hours using ethically sourced mulberry silk dyed in deep burgundy.',
-        base_price: 16500.0,
-        sale_price: 14200.0,
-        tax_rate: 5.0,
-        fabric: 'Pure Katan Banarasi Silk',
-        occasion: 'Wedding & Festive',
-        length_width: '5.5m Saree + 0.9m Blouse Piece | Width: 45 inches',
-        wash_care: 'Dry clean only. Store wrapped in unbleached muslin.',
-        manufacturing_info: 'Handwoven in Varanasi, Uttar Pradesh.',
-        country_of_origin: 'India',
-        return_policy: '7-day easy return on uncustomized sarees.',
-        is_featured: true,
-        is_new_arrival: true,
-        is_best_seller: true,
-        is_trending: true,
-        is_active: true,
-        rating_avg: 4.9,
-        review_count: 2,
-        created_at: now,
-        updated_at: now,
-      },
-      {
-        name: 'Meenakshi Berry Rose Kanjivaram Silk Saree',
-        slug: 'meenakshi-berry-rose-kanjivaram-saree',
-        sku: 'TAN-SAR-002',
-        primary_category_id: catMap['kanjivaram-sarees'],
-        short_description: 'Pure mulberry Kanjivaram silk saree with antique gold temple-weave border.',
-        description: 'Three-ply twisted mulberry silk woven in Kanchipuram featuring a regal antique gold korvai border and rich tasselled pallu.',
-        story: 'Crafted by fourth-generation Kanchipuram master weavers.',
-        base_price: 22500.0,
-        sale_price: 19400.0,
-        tax_rate: 5.0,
-        fabric: 'Pure Kanchipuram Mulberry Silk',
-        occasion: 'Bridal & Wedding',
-        length_width: '5.5m Saree + 0.9m Blouse Piece | Width: 46 inches',
-        wash_care: 'Dry clean only.',
-        manufacturing_info: 'Handwoven in Kanchipuram, Tamil Nadu.',
-        country_of_origin: 'India',
-        return_policy: '7-day easy return on uncustomized sarees.',
-        is_featured: true,
-        is_new_arrival: true,
-        is_best_seller: true,
-        is_trending: true,
-        is_active: true,
-        rating_avg: 5.0,
-        review_count: 1,
-        created_at: now,
-        updated_at: now,
-      },
-      {
-        name: 'Rajwada Dark Maroon Paithani Heritage Saree',
-        slug: 'rajwada-dark-maroon-paithani-saree',
-        sku: 'TAN-SAR-003',
-        primary_category_id: catMap['paithani-tussar-sarees'],
-        short_description: 'Handcrafted Yeola Paithani silk saree with intricate gold zari pallu.',
-        description: 'Tapestry-woven dark maroon silk Paithani featuring luminous antique gold zari motifs along the pallu and border.',
-        story: 'Woven over 210 artisan hours in Yeola using pure zari and mulberry silk.',
-        base_price: 26000.0,
-        sale_price: 22900.0,
-        tax_rate: 5.0,
-        fabric: 'Pure Paithani Mulberry Silk',
-        occasion: 'Wedding & Muhurat',
-        length_width: '5.5m Saree + 0.9m Blouse Piece | Width: 45 inches',
-        wash_care: 'Specialist dry clean only.',
-        manufacturing_info: 'Handwoven in Yeola, Maharashtra.',
-        country_of_origin: 'India',
-        return_policy: '7-day easy return on uncustomized sarees.',
-        is_featured: true,
-        is_new_arrival: true,
-        is_best_seller: false,
-        is_trending: true,
-        is_active: true,
-        rating_avg: 4.9,
-        review_count: 1,
-        created_at: now,
-        updated_at: now,
-      },
-      {
-        name: 'Noor Warm Ivory Organza Silk Saree',
-        slug: 'noor-warm-ivory-organza-silk-saree',
-        sku: 'TAN-SAR-004',
-        primary_category_id: catMap['organza-georgette-sarees'],
-        short_description: 'Featherlight warm ivory silk organza saree accented with dusty rose woven florals.',
-        description: 'Effortless grace in sheer silk organza with dusty rose floral motifs and refined scallop zari edge.',
-        story: 'Inspired by heritage summer garden soirées.',
-        base_price: 12800.0,
-        sale_price: 10990.0,
-        tax_rate: 5.0,
-        fabric: 'Pure Silk Organza',
-        occasion: 'Daytime Festive & Reception',
-        length_width: '5.5m Saree + 0.9m Blouse Piece | Width: 44 inches',
-        wash_care: 'Dry clean only.',
-        manufacturing_info: 'Handcrafted in Chanderi, Madhya Pradesh.',
-        country_of_origin: 'India',
-        return_policy: '7-day easy return & exchange.',
-        is_featured: true,
-        is_new_arrival: true,
-        is_best_seller: true,
-        is_trending: true,
-        is_active: true,
-        rating_avg: 4.8,
-        review_count: 1,
-        created_at: now,
-        updated_at: now,
-      },
-      {
-        name: 'Vanya Champagne & Burgundy Tussar Silk Saree',
-        slug: 'vanya-champagne-tussar-silk-saree',
-        sku: 'TAN-SAR-005',
-        primary_category_id: catMap['paithani-tussar-sarees'],
-        short_description: 'Handspun Bhagalpuri Tussar silk saree with warm botanical pallu.',
-        description: 'Naturally golden-beige handspun Tussar silk accented with deep burgundy and champagne woven borders.',
-        story: 'Celebrating wild silk textures and earthy luxury.',
-        base_price: 11800.0,
-        sale_price: 9950.0,
-        tax_rate: 5.0,
-        fabric: 'Pure Ghicha Tussar Silk',
-        occasion: 'Daytime Celebrations & Pooja',
-        length_width: '5.5m Saree + 0.9m Blouse Piece | Width: 44 inches',
-        wash_care: 'Dry clean only.',
-        manufacturing_info: 'Woven in Bhagalpur, Bihar.',
-        country_of_origin: 'India',
-        return_policy: '7-day easy return.',
-        is_featured: false,
-        is_new_arrival: true,
-        is_best_seller: false,
-        is_trending: true,
-        is_active: true,
-        rating_avg: 4.8,
-        review_count: 1,
-        created_at: now,
-        updated_at: now,
-      },
-      {
-        name: 'Zoya Wine Burgundy Scalloped Georgette Saree',
-        slug: 'zoya-wine-burgundy-georgette-saree',
-        sku: 'TAN-SAR-006',
-        primary_category_id: catMap['organza-georgette-sarees'],
-        short_description: 'Fluid wine-burgundy pure silk-georgette saree with delicate gold scalloped border.',
-        description: 'Tailored for cocktail and sangeet evenings with effortless drape and shimmering champagne scalloped edging.',
-        story: 'Minimalist evening refinement.',
-        base_price: 10900.0,
-        sale_price: 9250.0,
-        tax_rate: 5.0,
-        fabric: 'Pure Silk-Georgette',
-        occasion: 'Cocktail & Sangeet',
-        length_width: '5.5m Saree + 0.9m Blouse Piece',
-        wash_care: 'Dry clean only.',
-        manufacturing_info: 'Crafted at Taantira Atelier, Mumbai.',
-        country_of_origin: 'India',
-        return_policy: '7-day easy return.',
-        is_featured: true,
-        is_new_arrival: false,
-        is_best_seller: true,
-        is_trending: true,
-        is_active: true,
-        rating_avg: 4.7,
-        review_count: 1,
-        created_at: now,
-        updated_at: now,
-      },
-      {
-        name: 'Aahana Blush Pink Jamdani Muslin Saree',
-        slug: 'aahana-blush-pink-jamdani-saree',
-        sku: 'TAN-SAR-007',
-        primary_category_id: catMap['jamdani-handloom-sarees'],
-        short_description: 'Featherweight blush pink Bengal Jamdani muslin-silk saree with ivory motifs.',
-        description: 'Discontinuous supplementary weft handwoven Jamdani in dreamy blush pink and warm ivory.',
-        story: 'UNESCO-heritage Bengal handloom craft.',
-        base_price: 13900.0,
-        sale_price: 11900.0,
-        tax_rate: 5.0,
-        fabric: 'Mulberry Silk & Muslin Cotton Jamdani',
-        occasion: 'Intimate Weddings & Brunch',
-        length_width: '5.5m Saree + 0.9m Blouse Piece',
-        wash_care: 'Dry clean recommended.',
-        manufacturing_info: 'Handwoven in Phulia, West Bengal.',
-        country_of_origin: 'India',
-        return_policy: '7-day easy return.',
-        is_featured: true,
-        is_new_arrival: true,
-        is_best_seller: false,
-        is_trending: true,
-        is_active: true,
-        rating_avg: 4.9,
-        review_count: 1,
-        created_at: now,
-        updated_at: now,
-      },
-      {
-        name: 'Kavya Royal Crimson Banarasi Tissue Saree',
-        slug: 'kavya-crimson-banarasi-tissue-saree',
-        sku: 'TAN-SAR-008',
-        primary_category_id: catMap['banarasi-sarees'],
-        short_description: 'Lustrous crushed Banarasi tissue silk saree in deep wine crimson.',
-        description: 'Rich metallic zari-silk blend creating a glowing reception drape with matching raw silk blouse fabric.',
-        story: 'Designed for luminous evening ceremonies.',
-        base_price: 18200.0,
-        sale_price: 15800.0,
-        tax_rate: 5.0,
-        fabric: 'Banarasi Zari Tissue Silk',
-        occasion: 'Reception & Festive',
-        length_width: '5.5m Saree + 0.9m Blouse Piece',
-        wash_care: 'Dry clean only.',
-        manufacturing_info: 'Woven in Varanasi, Uttar Pradesh.',
-        country_of_origin: 'India',
-        return_policy: '7-day easy return.',
-        is_featured: false,
-        is_new_arrival: false,
-        is_best_seller: true,
-        is_trending: false,
-        is_active: true,
-        rating_avg: 4.8,
-        review_count: 0,
-        created_at: now,
-        updated_at: now,
-      },
-      {
-        name: 'Ira Ivory & Rose Zari Chanderi Silk Saree',
-        slug: 'ira-ivory-rose-chanderi-saree',
-        sku: 'TAN-SAR-009',
-        primary_category_id: catMap['jamdani-handloom-sarees'],
-        short_description: 'Translucent Chanderi silk-cotton saree with soft rose zari borders.',
-        description: 'Crisp yet airy handloom Chanderi saree woven with fine metallic zari and delicate butis.',
-        story: 'Everyday heirloom grace from Chanderi looms.',
-        base_price: 9600.0,
-        sale_price: 8200.0,
-        tax_rate: 5.0,
-        fabric: 'Pure Chanderi Silk-Cotton',
-        occasion: 'Festive Daytime & Gifting',
-        length_width: '5.5m Saree + 0.9m Blouse Piece',
-        wash_care: 'Dry clean only.',
-        manufacturing_info: 'Handwoven in Chanderi, Madhya Pradesh.',
-        country_of_origin: 'India',
-        return_policy: '7-day easy return.',
-        is_featured: false,
-        is_new_arrival: true,
-        is_best_seller: true,
-        is_trending: false,
-        is_active: true,
-        rating_avg: 4.9,
-        review_count: 1,
-        created_at: now,
-        updated_at: now,
-      },
-      {
-        name: 'Ruhani Champagne Gold & Pearl Chandbali Jewellery Set',
-        slug: 'ruhani-champagne-gold-pearl-chandbali-set',
-        sku: 'TAN-JWL-001',
-        primary_category_id: catMap.jewellery,
-        short_description: 'Handcrafted antique champagne gold floral brass & freshwater pearl saree earrings.',
-        description: 'Our signature 10% heirloom jewellery capsule curated exclusively to complement Taantira silk sarees—featuring antique matte gold leaf filigree and freshwater pearl drops.',
-        story: 'Hand-finished by heritage jewellery artisans in Jaipur.',
-        base_price: 3600.0,
-        sale_price: 2990.0,
-        tax_rate: 3.0,
-        fabric: '22K Micron Gold-Plated Brass & Freshwater Pearls',
-        occasion: 'Saree Pairing & Bridal Gifting',
-        length_width: 'Drop Length: 2.4 inches | Featherlight Push-Back',
-        wash_care: 'Store in airtight box away from moisture and perfume.',
-        manufacturing_info: 'Handcrafted in Jaipur, Rajasthan.',
-        country_of_origin: 'India',
-        return_policy: '7-day easy return in tamper-evident jewellery box.',
-        is_featured: true,
-        is_new_arrival: true,
-        is_best_seller: true,
-        is_trending: true,
-        is_active: true,
-        rating_avg: 4.9,
-        review_count: 1,
-        created_at: now,
-        updated_at: now,
-      },
-    ];
+    // 7. Products: 210 Unique Sarees across 42 Subcategories + 1 Curated Saree Jewellery Item
+    const productsData = [];
+    const prodMetaBySlug = {};
+
+    for (const main of MAIN_CATEGORIES) {
+      for (const sub of main.subcategories) {
+        for (const prod of sub.products) {
+          prodMetaBySlug[prod.slug] = { main, sub, prod };
+          productsData.push({
+            name: prod.name,
+            slug: prod.slug,
+            sku: prod.sku,
+            primary_category_id: catMap[sub.slug],
+            short_description: `${main.name} · ${sub.name} in ${sub.fabric}.`,
+            description: `${prod.name} curated under Taantira's ${main.name} (${sub.name}) collection, woven in ${sub.fabric}.`,
+            story: null,
+            base_price: Number(prod.price),
+            sale_price: prod.sale_price ? Number(prod.sale_price) : null,
+            tax_rate: 5.0,
+            fabric: sub.fabric,
+            occasion: main.slug === 'nauvari-sarees' ? 'Maharashtrian Nine-Yard Ceremonial' : 'Handloom & Festive',
+            length_width: prod.length_width || null,
+            wash_care: prod.wash_care || null,
+            manufacturing_info: null,
+            country_of_origin: 'India',
+            return_policy: '7-day easy return on uncustomized sarees.',
+            is_featured: Boolean(prod.is_featured),
+            is_new_arrival: Boolean(prod.is_new_arrival),
+            is_best_seller: Boolean(prod.is_best_seller),
+            is_trending: Boolean(prod.is_featured || prod.is_best_seller),
+            is_active: true,
+            rating_avg: prod.image_url ? 4.9 : 0.0,
+            review_count: 0,
+            created_at: now,
+            updated_at: now,
+          });
+        }
+      }
+    }
+
+    const jProd = JEWELLERY_CATEGORY.product;
+    productsData.push({
+      name: jProd.name,
+      slug: jProd.slug,
+      sku: jProd.sku,
+      primary_category_id: catMap[JEWELLERY_CATEGORY.slug],
+      short_description: 'Handcrafted antique champagne gold floral brass & freshwater pearl saree earrings.',
+      description: `${jProd.name} curated exclusively to complement Taantira silk sarees.`,
+      story: null,
+      base_price: Number(jProd.price),
+      sale_price: Number(jProd.sale_price),
+      tax_rate: 3.0,
+      fabric: jProd.fabric,
+      occasion: 'Saree Pairing & Gifting',
+      length_width: 'Drop Length: 2.4 inches',
+      wash_care: 'Store in airtight box away from moisture and perfume.',
+      manufacturing_info: 'Handcrafted in India.',
+      country_of_origin: 'India',
+      return_policy: '7-day easy return in tamper-evident jewellery box.',
+      is_featured: true,
+      is_new_arrival: true,
+      is_best_seller: true,
+      is_trending: true,
+      is_active: true,
+      rating_avg: 4.9,
+      review_count: 1,
+      created_at: now,
+      updated_at: now,
+    });
 
     await queryInterface.bulkInsert('products', productsData);
-    const [products] = await queryInterface.sequelize.query('SELECT id, slug, primary_category_id FROM products');
+    const [products] = await queryInterface.sequelize.query('SELECT id, slug, sku, primary_category_id FROM products');
     const prodMap = Object.fromEntries(products.map((p) => [p.slug, p.id]));
 
     await queryInterface.sequelize.query(
       `UPDATE products SET matching_product_ids_json = '${JSON.stringify([
         prodMap['ruhani-champagne-gold-pearl-chandbali-set'],
-        prodMap['meenakshi-berry-rose-kanjivaram-saree'],
       ])}' WHERE id = ${prodMap['aaradhya-burgundy-banarasi-silk-saree']}`
     );
 
@@ -480,40 +316,59 @@ module.exports = {
       { collection_id: colMap['new-arrivals'], product_id: prodMap['vanya-champagne-tussar-silk-saree'], sort_order: 4 },
       { collection_id: colMap['best-sellers'], product_id: prodMap['aaradhya-burgundy-banarasi-silk-saree'], sort_order: 1 },
       { collection_id: colMap['best-sellers'], product_id: prodMap['meenakshi-berry-rose-kanjivaram-saree'], sort_order: 2 },
-      { collection_id: colMap['best-sellers'], product_id: prodMap['noor-warm-ivory-organza-silk-saree'], sort_order: 3 },
+      { collection_id: colMap['nauvari-sarees'], product_id: prodMap['rajwada-royal-paithani-nauvari'], sort_order: 1 },
+      { collection_id: colMap['nauvari-sarees'], product_id: prodMap['maharani-traditional-paithani-nauvari'], sort_order: 2 },
+      { collection_id: colMap['nauvari-sarees'], product_id: prodMap['brahmani-heritage-cotton-nauvari'], sort_order: 3 },
+      { collection_id: colMap['nauvari-sarees'], product_id: prodMap['peshwai-heritage-nine-yard-saree'], sort_order: 4 },
       { collection_id: colMap['jewellery-pairing'], product_id: prodMap['ruhani-champagne-gold-pearl-chandbali-set'], sort_order: 1 },
     ].map((row) => ({ ...row, created_at: now, updated_at: now }));
     await queryInterface.bulkInsert('collection_products', collectionLinks);
 
-    // 8. Product Images
-    const imagesData = [
-      { product_id: prodMap['aaradhya-burgundy-banarasi-silk-saree'], image_url: '/assets/products/saree-burgundy.jpg', alt_text: 'Aaradhya Deep Burgundy Banarasi Silk Saree', is_primary: true, sort_order: 1 },
-      { product_id: prodMap['aaradhya-burgundy-banarasi-silk-saree'], image_url: '/assets/products/jewellery-chandbali.jpg', alt_text: 'Paired Antique Gold Chandbali Jewellery', is_primary: false, sort_order: 2 },
-      { product_id: prodMap['meenakshi-berry-rose-kanjivaram-saree'], image_url: '/assets/products/saree-kanjivaram-berry.jpg', alt_text: 'Meenakshi Berry Rose Kanjivaram Silk Saree', is_primary: true, sort_order: 1 },
-      { product_id: prodMap['rajwada-dark-maroon-paithani-saree'], image_url: '/assets/products/saree-paithani-maroon.jpg', alt_text: 'Rajwada Dark Maroon Paithani Heritage Saree', is_primary: true, sort_order: 1 },
-      { product_id: prodMap['noor-warm-ivory-organza-silk-saree'], image_url: '/assets/products/saree-ivory.jpg', alt_text: 'Noor Warm Ivory Organza Silk Saree', is_primary: true, sort_order: 1 },
-      { product_id: prodMap['vanya-champagne-tussar-silk-saree'], image_url: '/assets/products/saree-tussar-ivory.jpg', alt_text: 'Vanya Champagne Tussar Silk Saree', is_primary: true, sort_order: 1 },
-      { product_id: prodMap['zoya-wine-burgundy-georgette-saree'], image_url: '/assets/products/saree-georgette-wine.jpg', alt_text: 'Zoya Wine Burgundy Scalloped Georgette Saree', is_primary: true, sort_order: 1 },
-      { product_id: prodMap['aahana-blush-pink-jamdani-saree'], image_url: '/assets/products/saree-jamdani-blush.jpg', alt_text: 'Aahana Blush Pink Jamdani Muslin Saree', is_primary: true, sort_order: 1 },
-      { product_id: prodMap['kavya-crimson-banarasi-tissue-saree'], image_url: '/assets/products/saree-burgundy.jpg', alt_text: 'Kavya Royal Crimson Banarasi Tissue Saree', is_primary: true, sort_order: 1 },
-      { product_id: prodMap['ira-ivory-rose-chanderi-saree'], image_url: '/assets/products/saree-ivory.jpg', alt_text: 'Ira Ivory Rose Chanderi Silk Saree', is_primary: true, sort_order: 1 },
-      { product_id: prodMap['ruhani-champagne-gold-pearl-chandbali-set'], image_url: '/assets/products/jewellery-chandbali.jpg', alt_text: 'Ruhani Champagne Gold & Pearl Chandbali Jewellery Set', is_primary: true, sort_order: 1 },
-    ].map((img) => ({ ...img, created_at: now, updated_at: now }));
+    // 8. Product Images — strictly unique per product (never duplicated across different sarees)
+    const imagesData = [];
+    for (const [slug, meta] of Object.entries(prodMetaBySlug)) {
+      if (meta.prod.image_url) {
+        imagesData.push({
+          product_id: prodMap[slug],
+          image_url: meta.prod.image_url,
+          alt_text: `${meta.prod.name} — Main Front View`,
+          is_primary: true,
+          sort_order: 1,
+          created_at: now,
+          updated_at: now,
+        });
+      }
+    }
+    imagesData.push({
+      product_id: prodMap[jProd.slug],
+      image_url: jProd.image_url,
+      alt_text: `${jProd.name} — Primary View`,
+      is_primary: true,
+      sort_order: 1,
+      created_at: now,
+      updated_at: now,
+    });
     await queryInterface.bulkInsert('product_images', imagesData);
 
     // 9. Product Variants & Warehouse Stock
-    const variantsSeed = [
-      { product_id: prodMap['aaradhya-burgundy-banarasi-silk-saree'], sku: 'TAN-SAR-001-FS', size: 'Free Size (5.5m)', color_name: 'Deep Burgundy', color_hex: '#641B32', stock_qty: 18, low_stock_threshold: 4 },
-      { product_id: prodMap['meenakshi-berry-rose-kanjivaram-saree'], sku: 'TAN-SAR-002-FS', size: 'Free Size (5.5m)', color_name: 'Berry Rose', color_hex: '#A83F5E', stock_qty: 14, low_stock_threshold: 4 },
-      { product_id: prodMap['rajwada-dark-maroon-paithani-saree'], sku: 'TAN-SAR-003-FS', size: 'Free Size (5.5m)', color_name: 'Dark Maroon', color_hex: '#3D1023', stock_qty: 9, low_stock_threshold: 3 },
-      { product_id: prodMap['noor-warm-ivory-organza-silk-saree'], sku: 'TAN-SAR-004-FS', size: 'Free Size (5.5m)', color_name: 'Warm Ivory', color_hex: '#FFF9F2', stock_qty: 16, low_stock_threshold: 4 },
-      { product_id: prodMap['vanya-champagne-tussar-silk-saree'], sku: 'TAN-SAR-005-FS', size: 'Free Size (5.5m)', color_name: 'Champagne Gold', color_hex: '#C39A52', stock_qty: 12, low_stock_threshold: 4 },
-      { product_id: prodMap['zoya-wine-burgundy-georgette-saree'], sku: 'TAN-SAR-006-FS', size: 'Free Size (5.5m)', color_name: 'Deep Burgundy', color_hex: '#641B32', stock_qty: 15, low_stock_threshold: 4 },
-      { product_id: prodMap['aahana-blush-pink-jamdani-saree'], sku: 'TAN-SAR-007-FS', size: 'Free Size (5.5m)', color_name: 'Blush Pink', color_hex: '#F5E7E8', stock_qty: 11, low_stock_threshold: 3 },
-      { product_id: prodMap['kavya-crimson-banarasi-tissue-saree'], sku: 'TAN-SAR-008-FS', size: 'Free Size (5.5m)', color_name: 'Deep Burgundy', color_hex: '#641B32', stock_qty: 3, low_stock_threshold: 5 },
-      { product_id: prodMap['ira-ivory-rose-chanderi-saree'], sku: 'TAN-SAR-009-FS', size: 'Free Size (5.5m)', color_name: 'Warm Ivory', color_hex: '#FFF9F2', stock_qty: 20, low_stock_threshold: 4 },
-      { product_id: prodMap['ruhani-champagne-gold-pearl-chandbali-set'], sku: 'TAN-JWL-001-OS', size: 'One Size', color_name: 'Champagne Gold', color_hex: '#C39A52', stock_qty: 24, low_stock_threshold: 5 },
-    ].map((v) => ({ ...v, reserved_qty: 0, is_active: true, created_at: now, updated_at: now }));
+    const variantsSeed = products.map((p) => {
+      const isJewel = p.slug === jProd.slug;
+      const meta = prodMetaBySlug[p.slug];
+      const isNauvari = meta?.main?.slug === 'nauvari-sarees';
+      return {
+        product_id: p.id,
+        sku: isJewel ? `${p.sku}-OS` : `${p.sku}-FS`,
+        size: isJewel ? 'One Size' : isNauvari ? '9 Yards (Nauvari)' : 'Free Size',
+        color_name: isJewel ? 'Champagne Gold' : 'Signature Hue',
+        color_hex: '#641B32',
+        stock_qty: 12,
+        reserved_qty: 0,
+        low_stock_threshold: 4,
+        is_active: true,
+        created_at: now,
+        updated_at: now,
+      };
+    });
     await queryInterface.bulkInsert('product_variants', variantsSeed);
 
     await queryInterface.bulkInsert('warehouses', [
@@ -700,8 +555,8 @@ module.exports = {
     const orderMap = Object.fromEntries(orders.map((o) => [o.order_number, o.id]));
 
     await queryInterface.bulkInsert('order_items', [
-      { order_id: orderMap['TAN-2026-1001'], product_id: prodMap['aaradhya-burgundy-banarasi-silk-saree'], variant_id: varMap['TAN-SAR-001-FS'], product_name: 'Aaradhya Deep Burgundy Banarasi Silk Saree', sku: 'TAN-SAR-001-FS', size: 'Free Size (5.5m)', color_name: 'Deep Burgundy', quantity: 1, unit_price: 14200.0, tax_amount: 639.0, total_price: 14839.0, image_url: '/assets/products/saree-burgundy.jpg', created_at: threeDaysAgo, updated_at: threeDaysAgo },
-      { order_id: orderMap['TAN-2026-1002'], product_id: prodMap['meenakshi-berry-rose-kanjivaram-saree'], variant_id: varMap['TAN-SAR-002-FS'], product_name: 'Meenakshi Berry Rose Kanjivaram Silk Saree', sku: 'TAN-SAR-002-FS', size: 'Free Size (5.5m)', color_name: 'Berry Rose', quantity: 1, unit_price: 19400.0, tax_amount: 970.0, total_price: 20370.0, image_url: '/assets/products/saree-kanjivaram-berry.jpg', created_at: now, updated_at: now },
+      { order_id: orderMap['TAN-2026-1001'], product_id: prodMap['aaradhya-burgundy-banarasi-silk-saree'], variant_id: varMap['TAN-BAN-PS-01-FS'], product_name: 'Aaradhya Deep Burgundy Banarasi Silk Saree', sku: 'TAN-BAN-PS-01-FS', size: 'Free Size', color_name: 'Signature Hue', quantity: 1, unit_price: 14200.0, tax_amount: 639.0, total_price: 14839.0, image_url: '/assets/products/saree-burgundy.jpg', created_at: threeDaysAgo, updated_at: threeDaysAgo },
+      { order_id: orderMap['TAN-2026-1002'], product_id: prodMap['meenakshi-berry-rose-kanjivaram-saree'], variant_id: varMap['TAN-KAN-PS-01-FS'], product_name: 'Meenakshi Berry Rose Kanjivaram Silk Saree', sku: 'TAN-KAN-PS-01-FS', size: 'Free Size', color_name: 'Signature Hue', quantity: 1, unit_price: 19400.0, tax_amount: 970.0, total_price: 20370.0, image_url: '/assets/products/saree-kanjivaram-berry.jpg', created_at: now, updated_at: now },
       { order_id: orderMap['TAN-2026-1003'], product_id: prodMap['ruhani-champagne-gold-pearl-chandbali-set'], variant_id: varMap['TAN-JWL-001-OS'], product_name: 'Ruhani Champagne Gold & Pearl Chandbali Jewellery Set', sku: 'TAN-JWL-001-OS', size: 'One Size', color_name: 'Champagne Gold', quantity: 1, unit_price: 2990.0, tax_amount: 89.7, total_price: 3079.7, image_url: '/assets/products/jewellery-chandbali.jpg', created_at: now, updated_at: now },
     ]);
 
