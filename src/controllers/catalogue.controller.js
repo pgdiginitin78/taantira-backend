@@ -55,6 +55,9 @@ const getHomepage = async (req, res, next) => {
     const byCategory = (slug) =>
       products.filter((p) => p.primaryCategory?.slug === slug).slice(0, 4);
 
+    const sareeProducts = products.filter((p) => p.primaryCategory?.slug !== 'jewellery');
+    const jewelleryProducts = products.filter((p) => p.primaryCategory?.slug === 'jewellery');
+
     return sendSuccess(res, {
       banners,
       promotional_bar: promos[0] || null,
@@ -64,12 +67,12 @@ const getHomepage = async (req, res, next) => {
       best_sellers: products.filter((p) => p.is_best_seller).slice(0, 6),
       trending_products: products.filter((p) => p.is_trending).slice(0, 6),
       category_showcases: {
-        sarees: byCategory('sarees'),
-        dresses: byCategory('dresses'),
-        kurtas: byCategory('kurtas'),
-        suits: byCategory('suits'),
-        lehengas: byCategory('lehengas'),
-        accessories: byCategory('accessories'),
+        sarees: sareeProducts.slice(0, 8),
+        banarasi: byCategory('banarasi-sarees'),
+        kanjivaram: byCategory('kanjivaram-sarees'),
+        paithani_tussar: byCategory('paithani-tussar-sarees'),
+        organza_jamdani: [...byCategory('organza-georgette-sarees'), ...byCategory('jamdani-handloom-sarees')].slice(0, 4),
+        jewellery: jewelleryProducts.slice(0, 4),
       },
       customer_reviews: reviews,
       store_settings: settings,
@@ -168,14 +171,21 @@ const listProducts = async (req, res, next) => {
       orderClause = [['is_best_seller', 'DESC'], ['rating_avg', 'DESC']];
     }
 
-    const categorySlug = category || (collection && !['all', 'new-arrivals', 'best-sellers', 'festive-collections', 'bridal-celebrations'].includes(collection) ? collection : null);
+    const knownCollections = new Set(['all', 'sarees', 'new-arrivals', 'best-sellers', 'festive-collections', 'jewellery-pairing']);
+    const categorySlug = category || (collection && !knownCollections.has(collection) ? collection : null);
     let bannerEntity = null;
 
-    if (collection && ['new-arrivals', 'best-sellers', 'festive-collections', 'bridal-celebrations'].includes(collection)) {
+    if (collection && ['new-arrivals', 'best-sellers', 'festive-collections', 'jewellery-pairing'].includes(collection)) {
       bannerEntity = await Collection.findOne({ where: { slug: collection } });
     } else if (categorySlug) {
       bannerEntity = await Category.findOne({ where: { slug: categorySlug } });
     }
+
+    const categoryWhere = categorySlug
+      ? { slug: categorySlug }
+      : collection === 'sarees'
+      ? { slug: { [Op.ne]: 'jewellery' } }
+      : undefined;
 
     const variantWhere = { is_active: true };
     if (size) variantWhere.size = size;
@@ -188,7 +198,7 @@ const listProducts = async (req, res, next) => {
         {
           model: Category,
           as: 'primaryCategory',
-          ...(categorySlug ? { where: { slug: categorySlug } } : {}),
+          ...(categoryWhere ? { where: categoryWhere } : {}),
         },
         { model: ProductImage, as: 'images' },
         {
