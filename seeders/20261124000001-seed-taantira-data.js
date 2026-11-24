@@ -585,7 +585,7 @@ module.exports = {
 
     // 14. Marketing, Settings, Notifications
     await queryInterface.bulkInsert('banners', [
-      { title: 'Heirloom Handloom Sarees', subtitle: '90% Handwoven Banarasi, Kanjivaram, Paithani & Jamdani Sarees • 10% Curated Saree Jewellery', image_url: '/assets/banners/hero-festive.jpg', cta_text: 'Explore Saree Collection', cta_link: '/collections/sarees', position: 'hero', sort_order: 1, is_active: true, created_at: now, updated_at: now },
+      { title: 'Timeless Indian Weaves', subtitle: 'Handcrafted Sarees, Heritage Weaves & Elegant Jewellery for Every Occasion', image_url: '/assets/banners/hero-timeless.jpg', cta_text: 'Shop Sarees', cta_link: '/collections/sarees', position: 'hero', sort_order: 1, is_active: true, created_at: now, updated_at: now },
     ]);
 
     await queryInterface.bulkInsert('promotional_campaigns', [
