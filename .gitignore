@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Logs & runtime
+logs/
+*.log
+npm-debug.log*
+
+# Uploads & temp
+uploads/
+tmp/
+
+# Test & coverage
+coverage/
+
+# Deployment
+.vercel/
+.DS_Store
