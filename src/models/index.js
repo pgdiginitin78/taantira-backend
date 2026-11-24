@@ -175,6 +175,8 @@ Order.hasMany(Payment, { foreignKey: 'order_id', as: 'payments' });
 Payment.belongsTo(Order, { foreignKey: 'order_id', as: 'order' });
 Payment.hasMany(PaymentTransaction, { foreignKey: 'payment_id', as: 'transactions' });
 PaymentTransaction.belongsTo(Payment, { foreignKey: 'payment_id', as: 'payment' });
+User.hasMany(Refund, { foreignKey: 'user_id', as: 'refunds' });
+Refund.belongsTo(User, { foreignKey: 'user_id', as: 'customer' });
 Order.hasMany(Refund, { foreignKey: 'order_id', as: 'refunds' });
 Refund.belongsTo(Order, { foreignKey: 'order_id', as: 'order' });
 Refund.belongsTo(Payment, { foreignKey: 'payment_id', as: 'payment' });
